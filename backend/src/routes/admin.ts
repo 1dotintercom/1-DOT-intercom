@@ -7,6 +7,26 @@ import { updateLiveKitParticipantPermissions } from '../services/livekit.js';
 
 const router = Router();
 
+// Remove a panel account and all of its routes. The database foreign keys
+// cascade the panel and permission rows, while audit history is retained.
+router.delete('/panels/:panelId', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const { panelId } = req.params;
+  try {
+    const result = await query(
+      `DELETE FROM users
+       WHERE id = $1 AND role = 'panel_user'
+       RETURNING id`,
+      [panelId],
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Panel not found' });
+    logger.info({ adminId: req.user?.id, panelId }, 'Admin removed panel');
+    return res.json({ success: true, panelId });
+  } catch (err: any) {
+    logger.error({ err, panelId }, 'Failed to remove panel');
+    return res.status(500).json({ error: 'Failed to remove panel' });
+  }
+});
+
 // Provision a station account. New stations begin fully blocked; the admin
 // explicitly enables routes in the matrix after provisioning.
 router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
