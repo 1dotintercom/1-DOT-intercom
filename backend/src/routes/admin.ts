@@ -30,12 +30,13 @@ router.delete('/panels/:panelId', authenticateToken, requireAdmin, async (req: A
 // Provision a station account. New stations begin fully blocked; the admin
 // explicitly enables routes in the matrix after provisioning.
 router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
-  const { panel_code, name, location, email, password } = req.body;
-  if (![panel_code, name, location, email, password].every(value => typeof value === 'string' && value.trim())) {
-    return res.status(400).json({ error: 'Panel code, name, location, email, and password are required' });
+  const { panel_code, name, location, password } = req.body;
+  const username = String(req.body.username ?? req.body.email ?? '').trim();
+  if (![panel_code, name, location, username, password].every(value => typeof value === 'string' && value.trim())) {
+    return res.status(400).json({ error: 'Panel code, name, location, username, and password are required' });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Station password must be at least 8 characters' });
+  if (password.length < 4) {
+    return res.status(400).json({ error: 'Station password must be at least 4 characters' });
   }
 
   const client = await pool.connect();
@@ -44,7 +45,7 @@ router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest,
     const passwordHash = await bcrypt.hash(password, 12);
     const userRes = await client.query(
       'INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id',
-      [email.trim().toLowerCase(), passwordHash, 'panel_user']
+      [username.toLowerCase(), passwordHash, 'panel_user']
     );
     const panelId = userRes.rows[0].id;
     const panelRes = await client.query(

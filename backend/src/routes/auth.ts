@@ -9,16 +9,20 @@ const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-mobile-ic-jwt-key-2026';
 
 router.post('/login', async (req: AuthRequest, res: Response) => {
-  const { email, password } = req.body;
+  const identifier = String(req.body.username ?? req.body.email ?? '').trim();
+  const { password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
+  if (!identifier || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+  if (password.length < 4) {
+    return res.status(400).json({ error: 'Password must be at least 4 characters' });
   }
 
   try {
-    const userRes = await query('SELECT * FROM users WHERE email = $1', [email]);
+    const userRes = await query('SELECT * FROM users WHERE email = $1', [identifier.toLowerCase()]);
     if (userRes.rows.length === 0) {
-      logger.warn({ email }, 'Login failed: user not found');
+      logger.warn({ identifier }, 'Login failed: user not found');
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
@@ -26,7 +30,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
 
     if (!passwordMatch) {
-      logger.warn({ email }, 'Login failed: incorrect password');
+      logger.warn({ identifier }, 'Login failed: incorrect password');
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
