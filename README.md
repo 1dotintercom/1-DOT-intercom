@@ -25,13 +25,17 @@ README.md   - Documentation
      - 🟢 **Green (Listen Only)**: Hear target audio; cannot transmit.
      - 🟧 **Amber / Orange (Both / Full Duplex)**: Two-way conversation.
      - 🔘 **Gray (Blocked)**: Inert button.
-   - **Push-to-Talk (PTT)**: Press-and-hold button interaction with haptic feedback.
+   - **Push-to-Talk (PTT)**: Duplex and talk routes use the original press-and-hold walkie-talkie behavior. A 3.5-second hold locks the microphone; vibration and a circular countdown provide feedback, and `CANCEL / RELEASE` unlocks it.
+   - **Listen-only routes**: A permitted listen-only panel shows `TAP TO LISTEN`. Tap once to hear that specific panel and tap again to stop. It never listens unless explicitly selected.
+   - **Per-panel volume**: Large `−` and `+` controls adjust each incoming panel independently in 20% steps.
+   - **Panel visibility**: Operators see every other station, including blocked/non-assigned stations, but never see their own station. Blocked stations remain disabled.
    - **Live Speaker Ring Indicator**: Visual indication when audio is flowing from active speakers.
 
 2. **Admin-Controlled Routing & Permission Matrix**:
    - Interactive 20×20 scrollable matrix grid for System Admins.
    - Tap cell to cycle states: `Blocked` ➔ `Talk` ➔ `Listen` ➔ `Both`.
    - **Live SFU Enforcement**: Permission changes update active calls in under 1 second without reconnecting.
+   - **Operator accounts**: Admins provision stations with a username and a password of at least 4 characters. New routes are blocked until configured.
 
 3. **Logging & Immutable Audit Trail**:
    - Structured JSON logs written to console + rotating log files (`pino`).
@@ -77,6 +81,17 @@ npx react-native start
 cd mobile
 npx react-native run-android
 ```
+
+### 4. Build a standalone Android APK
+
+The release APK bundles the JavaScript application and does not require Metro on the phone:
+
+```powershell
+cd mobile/android
+.\gradlew.bat assembleRelease --no-daemon
+```
+
+The APK is generated at `mobile/android/app/build/outputs/apk/release/app-release.apk`. Before building, set `mobile/src/config.ts` to the public HTTPS backend URL (for example, your Render service URL). The backend must also expose the public LiveKit values: `LIVEKIT_HOST` with `https://` and `LIVEKIT_URL` with `wss://`.
 
 ---
 
