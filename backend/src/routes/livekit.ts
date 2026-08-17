@@ -49,7 +49,9 @@ router.post('/token', authenticateToken, async (req: AuthRequest, res: Response)
 
     return res.json({
       token,
-      livekitHost: process.env.LIVEKIT_HOST || 'http://localhost:7880',
+      // The server SDK uses LIVEKIT_HOST (https), while mobile WebRTC uses
+      // LIVEKIT_URL (wss). Keep both protocols explicit for cross-network use.
+      livekitHost: process.env.LIVEKIT_URL || process.env.LIVEKIT_HOST || 'http://localhost:7880',
       identity,
       room: 'mobile-ic-main',
     });
