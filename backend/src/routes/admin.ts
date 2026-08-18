@@ -42,6 +42,19 @@ router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest,
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    const duplicate = await client.query(
+      `SELECT id FROM panels WHERE LOWER(name) = LOWER($1) OR LOWER(panel_code) = LOWER($2) LIMIT 1`,
+      [name.trim(), panel_code.trim()],
+    );
+    if (duplicate.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'A panel with that name or panel code already exists' });
+    }
+    const duplicateLogin = await client.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [username]);
+    if (duplicateLogin.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'That panel username is already in use' });
+    }
     const passwordHash = await bcrypt.hash(password, 12);
     const userRes = await client.query(
       'INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id',
@@ -81,6 +94,57 @@ router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest,
   } finally {
     client.release();
   }
+});
+
+// Edit an existing panel account. Password is optional; when omitted the
+// existing password remains unchanged. This route is admin-only.
+router.put('/panels/:panelId', authenticateToken, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const { panelId } = req.params;
+  const { panel_code, name, location, password } = req.body;
+  const username = String(req.body.username ?? req.body.email ?? '').trim();
+  if (![panel_code, name, location, username].every(value => typeof value === 'string' && value.trim())) {
+    return res.status(400).json({ error: 'Panel code, name, location, and username are required' });
+  }
+  if (password !== undefined && password !== '' && (typeof password !== 'string' || password.length < 4)) {
+    return res.status(400).json({ error: 'Station password must be at least 4 characters' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const duplicate = await client.query(
+      `SELECT id FROM panels WHERE id <> $1 AND (LOWER(name) = LOWER($2) OR LOWER(panel_code) = LOWER($3)) LIMIT 1`,
+      [panelId, name.trim(), panel_code.trim()],
+    );
+    if (duplicate.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'A panel with that name or panel code already exists' });
+    }
+    const duplicateLogin = await client.query('SELECT id FROM users WHERE id <> $1 AND LOWER(email) = LOWER($2) LIMIT 1', [panelId, username]);
+    if (duplicateLogin.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'That panel username is already in use' });
+    }
+    await client.query('UPDATE users SET email = $1 WHERE id = $2 AND role = \'panel_user\'', [username.toLowerCase(), panelId]);
+    if (password) {
+      const hash = await bcrypt.hash(password, 12);
+      await client.query('UPDATE users SET password_hash = $1 WHERE id = $2 AND role = \'panel_user\'', [hash, panelId]);
+    }
+    const result = await client.query(
+      `UPDATE panels SET panel_code = $1, name = $2, location = $3 WHERE id = $4
+       RETURNING id, panel_code, name, location, status, created_at`,
+      [panel_code.trim().toUpperCase(), name.trim(), location.trim(), panelId],
+    );
+    if (!result.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Panel not found' });
+    }
+    await client.query('COMMIT');
+    return res.json(result.rows[0]);
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    logger.error({ err, panelId }, 'Failed to edit panel');
+    return res.status(err.code === '23505' ? 409 : 500).json({ error: err.code === '23505' ? 'Panel details already exist' : 'Failed to edit panel' });
+  } finally { client.release(); }
 });
 
 // Update permission state between panel_a and panel_b

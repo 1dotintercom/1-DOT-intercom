@@ -10,13 +10,14 @@ export const seedDatabase = async () => {
     logger.info('Seeding database with the default administrator...');
 
     // 1. Create Admin User
-    const adminPasswordHash = await bcrypt.hash('admin123', 10);
+    const adminPasswordHash = await bcrypt.hash('admin@1234', 10);
+    await query(`UPDATE users SET email = 'admin' WHERE role = 'admin' AND email = 'admin@mobileic.com'`);
     const adminUserRes = await query(
       `INSERT INTO users (email, password_hash, role)
        VALUES ($1, $2, $3)
        ON CONFLICT (email) DO UPDATE SET password_hash = $2
        RETURNING id`,
-      ['admin@mobileic.com', adminPasswordHash, 'admin']
+      ['admin', adminPasswordHash, 'admin']
     );
 
     logger.info('Database seeding completed successfully!');

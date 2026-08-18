@@ -36,6 +36,7 @@ README.md   - Documentation
    - Tap cell to cycle states: `Blocked` ➔ `Talk` ➔ `Listen` ➔ `Both`.
    - **Live SFU Enforcement**: Permission changes update active calls in under 1 second without reconnecting.
    - **Operator accounts**: Admins provision stations with a username and a password of at least 4 characters. New routes are blocked until configured.
+   - **Named matrix snapshots**: Admins can save, load, blank, and delete named route snapshots locally on the device/browser. Loading a snapshot applies its routes to the server; credentials are never stored in snapshots.
 
 3. **Logging & Immutable Audit Trail**:
    - Structured JSON logs written to console + rotating log files (`pino`).
@@ -96,5 +97,7 @@ The APK is generated at `mobile/android/app/build/outputs/apk/release/app-releas
 ---
 
 
+
+After backend changes, redeploy the Render service before testing admin edits, authentication, duplicate protection, or the new admin credentials. The mobile APK only needs rebuilding when mobile code changes.
 
 After signing in, open **Stations** to create each operator's station and sign-in. New station-to-station routes are blocked by default. Open **Matrix** to set the permitted talk, listen, or full-duplex paths before operators connect.

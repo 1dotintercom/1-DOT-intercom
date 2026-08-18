@@ -9,7 +9,10 @@ const router = Router();
 router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      'SELECT id, panel_code, name, location, status, created_at FROM panels ORDER BY panel_code ASC'
+      `SELECT p.id, p.panel_code, p.name, p.location, p.status, p.created_at,
+              u.email AS username
+       FROM panels p JOIN users u ON u.id = p.id
+       ORDER BY p.panel_code ASC`
     );
     return res.json(result.rows);
   } catch (err: any) {

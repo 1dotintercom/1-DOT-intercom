@@ -20,7 +20,14 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const userRes = await query('SELECT * FROM users WHERE email = $1', [identifier.toLowerCase()]);
+    const userRes = await query(
+      `SELECT u.* FROM users u
+       LEFT JOIN panels p ON p.id = u.id
+       WHERE LOWER(u.email) = LOWER($1)
+          OR LOWER(COALESCE(p.panel_code, '')) = LOWER($1)
+       LIMIT 1`,
+      [identifier],
+    );
     if (userRes.rows.length === 0) {
       logger.warn({ identifier }, 'Login failed: user not found');
       return res.status(401).json({ error: 'Invalid email or password' });
