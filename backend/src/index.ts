@@ -44,5 +44,5 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 app.listen(PORT, () => {
-  logger.info({ port: PORT }, `Mobile IC Agent Backend running on port ${PORT}`);
+  logger.info({ port: PORT }, `1 DOT Intercom backend running on port ${PORT}`);
 });
