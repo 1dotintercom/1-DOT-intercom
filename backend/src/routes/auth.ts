@@ -42,6 +42,24 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // Panel accounts inherit the license state of the administrator who owns
+    // their matrix. Existing global panels (owner_admin_id NULL) remain free
+    // panel accounts as before.
+    if (user.role === 'panel_user') {
+      const ownerLicense = await query(
+        `SELECT l.status, l.expires_at
+         FROM panels p
+         JOIN users owner ON owner.id = p.owner_admin_id AND owner.role = 'admin'
+         JOIN licenses l ON l.id = owner.license_id
+         WHERE p.id = $1`,
+        [user.id],
+      );
+      const license = ownerLicense.rows[0];
+      if (license && (license.status === 'revoked' || (license.expires_at && new Date(license.expires_at).getTime() <= Date.now()))) {
+        return res.status(403).json({ error: 'This panel is unavailable because its administrator license is no longer valid', license: true });
+      }
+    }
+
     // Only licensed administrator accounts require a device-bound license.
     // Panel operators can sign in with their panel credentials alone. The
     // unlinked global administrator is used only by the license console.
@@ -111,7 +129,24 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => 
     }
 
     const user = userRes.rows[0];
-    const panelRes = await query('SELECT * FROM panels WHERE id = $1', [user.id]);
+    if (user.role === 'panel_user') {
+      const ownerLicense = await query(
+        `SELECT l.status, l.expires_at
+         FROM panels p
+         JOIN users owner ON owner.id = p.owner_admin_id AND owner.role = 'admin'
+         JOIN licenses l ON l.id = owner.license_id
+         WHERE p.id = $1`,
+        [user.id],
+      );
+      const license = ownerLicense.rows[0];
+      if (license && (license.status === 'revoked' || (license.expires_at && new Date(license.expires_at).getTime() <= Date.now()))) {
+        return res.status(403).json({ error: 'This panel is unavailable because its administrator license is no longer valid', license: true });
+      }
+    }
+    const panelRes = await query(
+      'SELECT * FROM panels WHERE id = $1',
+      [user.id],
+    );
 
     return res.json({
       user,
