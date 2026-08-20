@@ -102,11 +102,10 @@ const newLicenseKey = () => {
 router.get('/admin/licenses', authenticateToken, requireGlobalAdmin, async (_req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT l.*, MAX(u.email) AS admin_username, COUNT(v.id)::int AS verification_count,
-              MAX(v.created_at) AS last_verified_at
+      `SELECT l.*, u.email AS admin_username
+       FROM licenses l
        LEFT JOIN users u ON u.license_id = l.id
-       LEFT JOIN license_verification_log v ON v.license_key = l.license_key
-       GROUP BY l.id ORDER BY l.created_at DESC`,
+       ORDER BY l.created_at DESC`,
     );
     return res.json({ licenses: result.rows });
   } catch (error) {
