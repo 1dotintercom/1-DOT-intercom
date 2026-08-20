@@ -54,8 +54,24 @@ router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest,
     }
     const duplicateLogin = await client.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [username]);
     if (duplicateLogin.rowCount) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'That panel username is already in use' });
+      // Usernames are tenant-scoped. Retire an old account only when its
+      // administrator's license is no longer usable; never reattach it.
+      await client.query(
+        `UPDATE users old_user
+         SET email = 'retired_' || REPLACE(old_user.id::text, '-', '') || '_' || old_user.email
+         FROM panels old_panel
+         JOIN users old_admin ON old_admin.id = old_panel.owner_admin_id
+         JOIN licenses old_license ON old_license.id = old_admin.license_id
+         WHERE old_user.id = old_panel.id AND old_user.role = 'panel_user'
+           AND LOWER(old_user.email) = LOWER($1)
+           AND (old_license.status = 'revoked' OR (old_license.expires_at IS NOT NULL AND old_license.expires_at <= CURRENT_TIMESTAMP))`,
+        [username],
+      );
+      const stillUsed = await client.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [username]);
+      if (stillUsed.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'That panel username is already in use by an active administrator' });
+      }
     }
     const passwordHash = await bcrypt.hash(password, 12);
     const userRes = await client.query(
@@ -127,8 +143,22 @@ router.put('/panels/:panelId', authenticateToken, requireAdmin, async (req: Auth
     }
     const duplicateLogin = await client.query('SELECT id FROM users WHERE id <> $1 AND LOWER(email) = LOWER($2) LIMIT 1', [panelId, username]);
     if (duplicateLogin.rowCount) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'That panel username is already in use' });
+      await client.query(
+        `UPDATE users old_user
+         SET email = 'retired_' || REPLACE(old_user.id::text, '-', '') || '_' || old_user.email
+         FROM panels old_panel
+         JOIN users old_admin ON old_admin.id = old_panel.owner_admin_id
+         JOIN licenses old_license ON old_license.id = old_admin.license_id
+         WHERE old_user.id = old_panel.id AND old_user.role = 'panel_user'
+           AND LOWER(old_user.email) = LOWER($2)
+           AND (old_license.status = 'revoked' OR (old_license.expires_at IS NOT NULL AND old_license.expires_at <= CURRENT_TIMESTAMP))`,
+        [panelId, username],
+      );
+      const stillUsed = await client.query('SELECT id FROM users WHERE id <> $1 AND LOWER(email) = LOWER($2) LIMIT 1', [panelId, username]);
+      if (stillUsed.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'That panel username is already in use by an active administrator' });
+      }
     }
     await client.query(
       'UPDATE users SET email = $1 WHERE id = $2 AND role = \'panel_user\' AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM panels p WHERE p.id = users.id AND p.owner_admin_id = $3))',

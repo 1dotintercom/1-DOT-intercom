@@ -82,3 +82,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS license_id UUID REFERENCES licenses(i
 ALTER TABLE panels ADD COLUMN IF NOT EXISTS owner_admin_id UUID REFERENCES users(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_license_id ON users(license_id) WHERE license_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_panels_owner_admin ON panels(owner_admin_id);
+
+-- Panel codes belong to an administrator's matrix, not to the whole system.
+-- Remove the original global constraint so a fresh license can reuse codes
+-- from an expired/revoked administrator without sharing any account.
+ALTER TABLE panels DROP CONSTRAINT IF EXISTS panels_panel_code_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_panels_owner_code ON panels(owner_admin_id, panel_code);
