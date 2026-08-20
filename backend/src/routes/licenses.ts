@@ -160,17 +160,35 @@ router.post('/admin/licenses', authenticateToken, requireGlobalAdmin, async (req
 });
 
 router.post('/admin/licenses/:id/revoke', authenticateToken, requireGlobalAdmin, async (req: AuthRequest, res: Response) => {
+  const client = await pool.connect();
   try {
-    const result = await query(
-      `UPDATE licenses SET status = 'revoked', device_fingerprint = NULL WHERE id = $1 RETURNING license_key`,
-      [req.params.id],
-    );
-    if (!result.rowCount) return res.status(404).json({ error: 'License not found' });
-    await writeLog(result.rows[0].license_key, '', 'revoked_by_admin', req, { admin_id: req.user?.id });
-    return res.json({ success: true });
+    await client.query('BEGIN');
+    const license = await client.query('SELECT id, license_key FROM licenses WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (!license.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'License not found' });
+    }
+    const admin = await client.query(`SELECT id FROM users WHERE license_id = $1 AND role = 'admin'`, [req.params.id]);
+    if (admin.rowCount) {
+      // Removing the owner removes panels, permissions and panel credentials
+      // through the existing foreign-key cascades. Audit history is retained.
+      await client.query(
+        `DELETE FROM users
+         WHERE id IN (SELECT id FROM panels WHERE owner_admin_id = ANY($1::uuid[]))`,
+        [admin.rows.map(row => row.id)],
+      );
+      await client.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [admin.rows.map(row => row.id)]);
+    }
+    await client.query('DELETE FROM licenses WHERE id = $1', [req.params.id]);
+    await client.query('COMMIT');
+    await writeLog(license.rows[0].license_key, '', 'revoked_and_deleted', req, { admin_id: req.user?.id });
+    return res.json({ success: true, deleted: true });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
     logger.error({ error }, 'Failed to revoke license');
     return res.status(500).json({ error: 'Failed to revoke license' });
+  } finally {
+    client.release();
   }
 });
 
