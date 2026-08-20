@@ -8,7 +8,6 @@ Mobile IC Agent is an internet-wide software intercom system modeled after **Cle
 
 ```
 /backend    - Node.js + Express + TypeScript API (LiveKit Server SDK, JWT Auth, Audit Logs, Pino)
-/web        - React web app (same GUI as mobile — Push-to-Talk Panel, Admin Matrix, Audit Logs)
 /mobile     - React Native mobile app (Push-to-Talk Panel, Admin Matrix, Audit Logs, Auth)
 /db         - Database schema (schema.sql)
 README.md   - Documentation
@@ -57,22 +56,7 @@ README.md   - Documentation
    npm run dev
    ```
 
-### 2. Run Web App (Recommended)
-```powershell
-# Start backend (if not already running)
-cd backend
-npm run dev
-
-# In another terminal — start the web app
-cd web
-npm install
-npm run dev
-```
-Open **http://localhost:5173** in your browser. The Vite dev server proxies `/api` requests to the backend on port 5000.
-
-For production builds, set `VITE_API_BASE_URL` to your deployed backend URL.
-
-### 3. Run Mobile App (Optional)
+### 2. Run Mobile App
 ```powershell
 # Start Metro bundler
 cd mobile
@@ -83,7 +67,7 @@ cd mobile
 npx react-native run-android
 ```
 
-### 4. Build a standalone Android APK
+### 3. Build a standalone Android APK
 
 The release APK bundles the JavaScript application and does not require Metro on the phone:
 
@@ -95,9 +79,5 @@ cd mobile/android
 The APK is generated at `mobile/android/app/build/outputs/apk/release/app-release.apk`. Before building, set `mobile/src/config.ts` to the public HTTPS backend URL (for example, your Render service URL). The backend must also expose the public LiveKit values: `LIVEKIT_HOST` with `https://` and `LIVEKIT_URL` with `wss://`.
 
 ---
-
-
-
-After backend changes, redeploy the Render service before testing admin edits, authentication, duplicate protection, or the new admin credentials. The mobile APK only needs rebuilding when mobile code changes.
 
 After signing in, open **Stations** to create each operator's station and sign-in. New station-to-station routes are blocked by default. Open **Matrix** to set the permitted talk, listen, or full-duplex paths before operators connect.
