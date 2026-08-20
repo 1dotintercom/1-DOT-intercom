@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { query } from '../db.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 import { logger } from '../logger.js';
+import { activateLicenseForLogin } from './licenses.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-mobile-ic-jwt-key-2026';
@@ -41,6 +42,14 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // Only licensed administrator accounts require a device-bound license.
+    // Panel operators can sign in with their panel credentials alone. The
+    // unlinked global administrator is used only by the license console.
+    if (user.role === 'admin' && user.license_id) {
+      const licenseResult = await activateLicenseForLogin(req.body.license_key, req.body.device_fingerprint, req);
+      if (!licenseResult.ok) return res.status(licenseResult.status || 403).json({ error: licenseResult.error, license: true });
+    }
+
     // Get associated panel info if user is a panel_user
     let panelInfo: any = null;
     if (user.role === 'panel_user' || true) {
@@ -56,6 +65,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
       id: user.id,
       email: user.email,
       role: user.role,
+      license_id: user.license_id || null,
       panel_code: panelInfo?.panel_code,
       panel_name: panelInfo?.name,
     };
@@ -70,6 +80,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
         id: user.id,
         email: user.email,
         role: user.role,
+        license_id: user.license_id || null,
       },
       panel: panelInfo,
     });
@@ -94,7 +105,7 @@ router.post('/logout', authenticateToken, async (req: AuthRequest, res: Response
 
 router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const userRes = await query('SELECT id, email, role, created_at FROM users WHERE id = $1', [req.user?.id]);
+    const userRes = await query('SELECT id, email, role, license_id, created_at FROM users WHERE id = $1', [req.user?.id]);
     if (userRes.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }

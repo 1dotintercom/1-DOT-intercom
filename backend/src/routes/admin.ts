@@ -15,8 +15,9 @@ router.delete('/panels/:panelId', authenticateToken, requireAdmin, async (req: A
     const result = await query(
       `DELETE FROM users
        WHERE id = $1 AND role = 'panel_user'
+         AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM panels p WHERE p.id = users.id AND p.owner_admin_id = $2))
        RETURNING id`,
-      [panelId],
+      [panelId, req.user?.license_id ? req.user.id : null],
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Panel not found' });
     logger.info({ adminId: req.user?.id, panelId }, 'Admin removed panel');
@@ -43,8 +44,9 @@ router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest,
   try {
     await client.query('BEGIN');
     const duplicate = await client.query(
-      `SELECT id FROM panels WHERE LOWER(name) = LOWER($1) OR LOWER(panel_code) = LOWER($2) LIMIT 1`,
-      [name.trim(), panel_code.trim()],
+      `SELECT id FROM panels WHERE (LOWER(name) = LOWER($1) OR LOWER(panel_code) = LOWER($2))
+       AND ($3::uuid IS NULL OR owner_admin_id = $3) LIMIT 1`,
+      [name.trim(), panel_code.trim(), req.user?.license_id ? req.user.id : null],
     );
     if (duplicate.rowCount) {
       await client.query('ROLLBACK');
@@ -62,14 +64,17 @@ router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest,
     );
     const panelId = userRes.rows[0].id;
     const panelRes = await client.query(
-      `INSERT INTO panels (id, panel_code, name, location, status)
-       VALUES ($1, $2, $3, $4, 'offline')
+      `INSERT INTO panels (id, panel_code, name, location, status, owner_admin_id)
+       VALUES ($1, $2, $3, $4, 'offline', $5)
        RETURNING id, panel_code, name, location, status, created_at`,
-      [panelId, panel_code.trim().toUpperCase(), name.trim(), location.trim()]
+      [panelId, panel_code.trim().toUpperCase(), name.trim(), location.trim(), req.user?.license_id ? req.user.id : null]
     );
 
     // Add both directions for every pair. All routes are blocked by default.
-    const existing = await client.query('SELECT id FROM panels WHERE id <> $1', [panelId]);
+    const existing = await client.query(
+      `SELECT id FROM panels WHERE id <> $1 AND ($2::uuid IS NULL OR owner_admin_id = $2)`,
+      [panelId, req.user?.license_id ? req.user.id : null],
+    );
     for (const other of existing.rows) {
       await client.query(
         `INSERT INTO permissions (panel_a_id, panel_b_id, state, updated_by_admin_id)
@@ -112,8 +117,9 @@ router.put('/panels/:panelId', authenticateToken, requireAdmin, async (req: Auth
   try {
     await client.query('BEGIN');
     const duplicate = await client.query(
-      `SELECT id FROM panels WHERE id <> $1 AND (LOWER(name) = LOWER($2) OR LOWER(panel_code) = LOWER($3)) LIMIT 1`,
-      [panelId, name.trim(), panel_code.trim()],
+      `SELECT id FROM panels WHERE id <> $1 AND (LOWER(name) = LOWER($2) OR LOWER(panel_code) = LOWER($3))
+       AND ($4::uuid IS NULL OR owner_admin_id = $4) LIMIT 1`,
+      [panelId, name.trim(), panel_code.trim(), req.user?.license_id ? req.user.id : null],
     );
     if (duplicate.rowCount) {
       await client.query('ROLLBACK');
@@ -124,15 +130,19 @@ router.put('/panels/:panelId', authenticateToken, requireAdmin, async (req: Auth
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'That panel username is already in use' });
     }
-    await client.query('UPDATE users SET email = $1 WHERE id = $2 AND role = \'panel_user\'', [username.toLowerCase(), panelId]);
+    await client.query(
+      'UPDATE users SET email = $1 WHERE id = $2 AND role = \'panel_user\' AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM panels p WHERE p.id = users.id AND p.owner_admin_id = $3))',
+      [username.toLowerCase(), panelId, req.user?.license_id ? req.user.id : null],
+    );
     if (password) {
       const hash = await bcrypt.hash(password, 12);
       await client.query('UPDATE users SET password_hash = $1 WHERE id = $2 AND role = \'panel_user\'', [hash, panelId]);
     }
     const result = await client.query(
       `UPDATE panels SET panel_code = $1, name = $2, location = $3 WHERE id = $4
+       AND ($5::uuid IS NULL OR owner_admin_id = $5)
        RETURNING id, panel_code, name, location, status, created_at`,
-      [panel_code.trim().toUpperCase(), name.trim(), location.trim(), panelId],
+      [panel_code.trim().toUpperCase(), name.trim(), location.trim(), panelId, req.user?.license_id ? req.user.id : null],
     );
     if (!result.rowCount) {
       await client.query('ROLLBACK');
@@ -158,6 +168,16 @@ router.put('/permissions', authenticateToken, requireAdmin, async (req: AuthRequ
   }
 
   try {
+    if (req.user?.license_id) {
+      const owned = await query(
+        `SELECT COUNT(*)::int AS count FROM panels
+         WHERE id = ANY($1::uuid[]) AND owner_admin_id = $2`,
+        [[panel_a_id, panel_b_id], req.user.id],
+      );
+      if (Number(owned.rows[0]?.count || 0) !== 2) {
+        return res.status(403).json({ error: 'You can only edit your own matrix' });
+      }
+    }
     // 1. Get old state
     const existingRes = await query(
       'SELECT state FROM permissions WHERE panel_a_id = $1 AND panel_b_id = $2',

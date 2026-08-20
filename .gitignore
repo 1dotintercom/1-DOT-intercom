@@ -10,6 +10,10 @@ node_modules/
 *.log
 backend/logs/
 
+# Android signing secrets
+mobile/android/keystore.properties
+mobile/android/app/mobile-ic-release.keystore
+
 # Build output
 backend/dist/
 mobile/android/.gradle/
@@ -29,4 +33,3 @@ Thumbs.db
 .metro-health-check*
 mobile/.bundle/
 mobile/.expo/
-

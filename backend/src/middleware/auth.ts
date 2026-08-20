@@ -7,6 +7,7 @@ export interface AuthRequest extends Request {
     id: string;
     email: string;
     role: 'admin' | 'panel_user';
+    license_id?: string | null;
     panel_code?: string;
     panel_name?: string;
   };
@@ -37,6 +38,14 @@ export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction
   if (!req.user || req.user.role !== 'admin') {
     logger.warn({ user: req.user?.email, path: req.path }, 'Forbidden access attempt to admin route');
     return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
+export const requireGlobalAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user || req.user.role !== 'admin' || req.user.license_id) {
+    logger.warn({ user: req.user?.email, path: req.path }, 'Forbidden access attempt to global administrator route');
+    return res.status(403).json({ error: 'Global administrator access required' });
   }
   next();
 };

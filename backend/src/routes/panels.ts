@@ -12,7 +12,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       `SELECT p.id, p.panel_code, p.name, p.location, p.status, p.created_at,
               u.email AS username
        FROM panels p JOIN users u ON u.id = p.id
+       WHERE ($1::uuid IS NULL OR p.owner_admin_id = $1)
        ORDER BY p.panel_code ASC`
+      , [req.user?.role === 'admin' && req.user?.license_id ? req.user.id : null]
     );
     return res.json(result.rows);
   } catch (err: any) {
@@ -25,7 +27,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 router.get('/permissions', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      'SELECT panel_a_id, panel_b_id, state, updated_by_admin_id, updated_at FROM permissions'
+      `SELECT panel_a_id, panel_b_id, state, updated_by_admin_id, updated_at FROM permissions
+       WHERE ($1::uuid IS NULL OR EXISTS (SELECT 1 FROM panels p WHERE p.id = panel_a_id AND p.owner_admin_id = $1))`,
+      [req.user?.role === 'admin' && req.user?.license_id ? req.user.id : null]
     );
     return res.json(result.rows);
   } catch (err: any) {

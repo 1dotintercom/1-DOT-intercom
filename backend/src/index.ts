@@ -7,6 +7,7 @@ import panelsRoutes from './routes/panels.js';
 import adminRoutes from './routes/admin.js';
 import auditRoutes from './routes/audit.js';
 import livekitRoutes from './routes/livekit.js';
+import licenseRoutes from './routes/licenses.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/admin/audit-logs', auditRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/livekit', livekitRoutes);
+app.use('/api/license', licenseRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
