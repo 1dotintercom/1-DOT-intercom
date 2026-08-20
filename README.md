@@ -1,6 +1,6 @@
-# Mobile IC Agent — Mobile Intercom App (React Native + Node.js + LiveKit)
+# 1 DOT Intercom — Mobile Intercom App (React Native + Node.js + LiveKit)
 
-Mobile IC Agent is an internet-wide software intercom system modeled after **ClearCom**, **RTS**, and **Telex** broadcast hardware panels. It connects up to 20 concurrent intercom panels across the globe with server-side media layer permission matrix enforcement on iOS and Android.
+1 DOT Intercom is an internet-wide software intercom system modeled after professional broadcast hardware panels. It connects up to 20 concurrent intercom panels across the globe with server-side media layer permission matrix enforcement on iOS and Android.
 
 ---
 

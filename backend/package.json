@@ -1,7 +1,7 @@
 {
   "name": "mobile-ic-backend",
   "version": "1.0.0",
-  "description": "Mobile IC Agent Backend API & LiveKit Intercom Service",
+  "description": "1 DOT Intercom Backend API & LiveKit Intercom Service",
   "main": "dist/index.js",
   "scripts": {
     "build": "npx tsc",

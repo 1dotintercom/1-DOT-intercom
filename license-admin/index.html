@@ -2,15 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Mobile IC Agent — License Console</title>
+  <title>1 DOT Intercom — License Console</title>
+  <link rel="icon" type="image/jpeg" href="favicon.jpg">
   <style>
     :root{color-scheme:dark;--bg:#08111f;--card:#111f35;--line:#294365;--blue:#60a5fa;--green:#22c55e;--red:#f87171;--amber:#f59e0b}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#e5eefc;font:15px system-ui,sans-serif}main{max-width:1120px;margin:auto;padding:28px 18px}h1{margin:0 0 5px;color:var(--blue);letter-spacing:1px}p{color:#94a3b8}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin:18px 0}label{display:block;color:#a9bad2;font-weight:700;font-size:12px;letter-spacing:.7px;margin:12px 0 6px}input,button{font:inherit;border-radius:8px;border:1px solid var(--line);padding:11px 13px;background:#0b1729;color:#fff}input{width:100%}button{cursor:pointer;background:#1d4ed8;border-color:#3b82f6;font-weight:800}button.secondary{background:#1e293b;border-color:#475569}button.danger{background:#7f1d1d;border-color:#ef4444}button:disabled{opacity:.5;cursor:not-allowed}.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.row>div{flex:1;min-width:180px}.hidden{display:none}.error{color:var(--red);font-weight:700}.success{color:#86efac;font-weight:700}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:800px}th,td{text-align:left;padding:12px 10px;border-bottom:1px solid #213752}th{color:#93c5fd;font-size:12px;letter-spacing:.7px}.pill{font-size:11px;font-weight:900;padding:4px 8px;border-radius:999px}.unused{color:var(--amber);background:#78350f}.active{color:#86efac;background:#14532d}.revoked{color:#fca5a5;background:#7f1d1d}.key{font-family:ui-monospace,monospace;letter-spacing:1px;color:#fde68a}.muted{color:#64748b;font-size:12px}pre{white-space:pre-wrap;background:#07101e;border:1px solid #3b82f6;border-radius:8px;padding:14px;color:#fde68a;font-weight:800}
   </style>
 </head>
 <body><main>
-  <h1>MOBILE IC AGENT</h1><p>License administration console</p>
-  <section id="login" class="card"><h2>Administrator sign in</h2><div class="row"><div><label>USERNAME</label><input id="username" value="admin" autocomplete="username"></div><div><label>PASSWORD</label><input id="password" type="password" autocomplete="current-password"></div><div><button id="loginBtn">SIGN IN</button></div></div><p id="loginError" class="error"></p></section>
+  <h1>1 DOT INTERCOM</h1><p>License administration console</p>
+  <section id="login" class="card"><h2>Administrator sign in</h2><div class="row"><div><label>USERNAME</label><input id="username" value="admin" autocomplete="username" autocapitalize="none" autocorrect="off"></div><div><label>PASSWORD</label><input id="password" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off"></div><div><button id="loginBtn">SIGN IN</button></div></div><p id="loginError" class="error"></p></section>
   <section id="app" class="hidden">
     <div class="row"><div><h2>Licenses</h2></div><div style="text-align:right"><button class="secondary" id="refreshBtn">REFRESH</button> <button class="secondary" id="logoutBtn">LOG OUT</button></div></div>
     <div class="card"><h3>Generate administrator license</h3><p class="muted">Each license receives a unique administrator username and password. Save the credentials immediately; the password is shown only once.</p><div class="row"><div><label>ISSUED TO (OPTIONAL)</label><input id="issuedTo" placeholder="Buyer, team, or order reference"></div><div><label>EXPIRY (OPTIONAL)</label><input id="expiresAt" type="datetime-local"></div><div><button id="generateBtn">GENERATE LICENSE</button></div></div><p id="generateMessage"></p><pre id="credentials" class="hidden"></pre></div>

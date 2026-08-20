@@ -1,4 +1,4 @@
-# Mobile IC Agent License Console
+# 1 DOT Intercom License Console
 
 This is a separate static web admin panel. It does not belong in the Android app.
 
