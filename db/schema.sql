@@ -60,8 +60,19 @@ CREATE TABLE IF NOT EXISTS licenses (
     activated_at TIMESTAMP WITH TIME ZONE,
     expires_at TIMESTAMP WITH TIME ZONE,
     issued_to VARCHAR(255),
+    admin_password_ciphertext TEXT,
+    device_name VARCHAR(255),
+    device_model VARCHAR(255),
+    device_location VARCHAR(255),
+    last_ip INET,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS admin_password_ciphertext TEXT;
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS device_name VARCHAR(255);
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS device_model VARCHAR(255);
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS device_location VARCHAR(255);
+ALTER TABLE licenses ADD COLUMN IF NOT EXISTS last_ip INET;
 
 CREATE TABLE IF NOT EXISTS license_verification_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

@@ -10,6 +10,33 @@ const router = Router();
 const normaliseKey = (value: unknown) => String(value ?? '').trim().toUpperCase();
 const normaliseFingerprint = (value: unknown) => String(value ?? '').trim();
 
+// Passwords are never stored as plaintext.  The global administrator can
+// reveal a generated password through the protected console while this key is
+// present on the server.  Set LICENSE_CREDENTIAL_KEY in Render; the fallback
+// keeps existing installations working until that variable is added.
+const credentialKey = crypto.createHash('sha256')
+  .update(process.env.LICENSE_CREDENTIAL_KEY || process.env.JWT_SECRET || 'mobile-ic-credential-key')
+  .digest();
+const encryptCredential = (value: string) => {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', credentialKey, iv);
+  const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return [iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), ciphertext.toString('base64url')].join('.');
+};
+const decryptCredential = (value: string) => {
+  const [ivText, tagText, dataText] = value.split('.');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', credentialKey, Buffer.from(ivText, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(dataText, 'base64url')), decipher.final()]).toString('utf8');
+};
+
+const requestDevice = (req: any) => ({
+  name: String(req.headers['x-device-name'] || '').trim() || null,
+  model: String(req.headers['x-device-model'] || req.headers['user-agent'] || '').trim().slice(0, 255) || null,
+  location: String(req.headers['x-device-location'] || '').trim().slice(0, 255) || null,
+  ip: req.ip || null,
+});
+
 const writeLog = async (licenseKey: string, fingerprint: string, result: string, req: any, details: Record<string, unknown> = {}) => {
   await query(
     `INSERT INTO license_verification_log (license_key, device_fingerprint, result, ip_address, details)
@@ -40,7 +67,8 @@ const evaluateLicense = async (licenseKey: string, fingerprint: string, req: any
       return { ok: false, status: 403, error: 'This license has been revoked' };
     }
     if (license.expires_at && new Date(license.expires_at).getTime() <= Date.now()) {
-      await client.query('ROLLBACK');
+      await client.query(`UPDATE licenses SET status = 'revoked' WHERE id = $1 AND status <> 'revoked'`, [license.id]);
+      await client.query('COMMIT');
       await writeLog(licenseKey, fingerprint, 'expired', req);
       return { ok: false, status: 403, error: 'This license has expired' };
     }
@@ -56,8 +84,16 @@ const evaluateLicense = async (licenseKey: string, fingerprint: string, req: any
     }
     if (!license.device_fingerprint) {
       await client.query(
-        `UPDATE licenses SET device_fingerprint = $1, activated_at = CURRENT_TIMESTAMP, status = 'active' WHERE id = $2`,
-        [fingerprint, license.id],
+        `UPDATE licenses SET device_fingerprint = $1, activated_at = CURRENT_TIMESTAMP, status = 'active',
+          device_name = $3, device_model = $4, device_location = $5, last_ip = $6 WHERE id = $2`,
+        [fingerprint, license.id, requestDevice(req).name, requestDevice(req).model, requestDevice(req).location, requestDevice(req).ip],
+      );
+    } else {
+      const device = requestDevice(req);
+      await client.query(
+        `UPDATE licenses SET device_name = COALESCE($1, device_name), device_model = COALESCE($2, device_model),
+          device_location = COALESCE($3, device_location), last_ip = COALESCE($4, last_ip) WHERE id = $5`,
+        [device.name, device.model, device.location, device.ip, license.id],
       );
     }
     await client.query('COMMIT');
@@ -101,8 +137,12 @@ const newLicenseKey = () => {
 
 router.get('/admin/licenses', authenticateToken, requireGlobalAdmin, async (_req: AuthRequest, res: Response) => {
   try {
+    // Expiry is enforced here as well as during login, so the console never
+    // presents an expired license as active after the clock has passed.
+    await query(`UPDATE licenses SET status = 'revoked' WHERE expires_at IS NOT NULL AND expires_at <= CURRENT_TIMESTAMP AND status <> 'revoked'`);
     const result = await query(
-      `SELECT l.*, u.email AS admin_username
+      `SELECT l.*, u.email AS admin_username,
+              (l.expires_at IS NOT NULL AND l.expires_at <= CURRENT_TIMESTAMP) AS expired
        FROM licenses l
        LEFT JOIN users u ON u.license_id = l.id
        ORDER BY l.created_at DESC`,
@@ -111,6 +151,20 @@ router.get('/admin/licenses', authenticateToken, requireGlobalAdmin, async (_req
   } catch (error) {
     logger.error({ error }, 'Failed to list licenses');
     return res.status(500).json({ error: 'Failed to list licenses' });
+  }
+});
+
+router.get('/admin/licenses/:id/credentials', authenticateToken, requireGlobalAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(`SELECT l.license_key, u.email AS username, l.admin_password_ciphertext
+      FROM licenses l LEFT JOIN users u ON u.license_id = l.id WHERE l.id = $1`, [req.params.id]);
+    if (!result.rowCount) return res.status(404).json({ error: 'License not found' });
+    const row = result.rows[0];
+    if (!row.admin_password_ciphertext) return res.status(404).json({ error: 'Password is unavailable for this older license' });
+    return res.json({ license_key: row.license_key, username: row.username, password: decryptCredential(row.admin_password_ciphertext) });
+  } catch (error) {
+    logger.error({ error }, 'Failed to reveal license credentials');
+    return res.status(500).json({ error: 'Could not reveal credentials' });
   }
 });
 
@@ -136,6 +190,7 @@ router.post('/admin/licenses', authenticateToken, requireGlobalAdmin, async (req
             `INSERT INTO users (email, password_hash, role, license_id) VALUES ($1, $2, 'admin', $3)`,
             [username, passwordHash, result.rows[0].id],
           );
+          await client.query(`UPDATE licenses SET admin_password_ciphertext = $1 WHERE id = $2`, [encryptCredential(generatedPassword), result.rows[0].id]);
           await client.query('COMMIT');
           return res.status(201).json({
             license: result.rows[0],
@@ -168,21 +223,10 @@ router.post('/admin/licenses/:id/revoke', authenticateToken, requireGlobalAdmin,
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'License not found' });
     }
-    const admin = await client.query(`SELECT id FROM users WHERE license_id = $1 AND role = 'admin'`, [req.params.id]);
-    if (admin.rowCount) {
-      // Removing the owner removes panels, permissions and panel credentials
-      // through the existing foreign-key cascades. Audit history is retained.
-      await client.query(
-        `DELETE FROM users
-         WHERE id IN (SELECT id FROM panels WHERE owner_admin_id = ANY($1::uuid[]))`,
-        [admin.rows.map(row => row.id)],
-      );
-      await client.query('DELETE FROM users WHERE id = ANY($1::uuid[])', [admin.rows.map(row => row.id)]);
-    }
-    await client.query('DELETE FROM licenses WHERE id = $1', [req.params.id]);
+    await client.query(`UPDATE licenses SET status = 'revoked' WHERE id = $1`, [req.params.id]);
     await client.query('COMMIT');
-    await writeLog(license.rows[0].license_key, '', 'revoked_and_deleted', req, { admin_id: req.user?.id });
-    return res.json({ success: true, deleted: true });
+    await writeLog(license.rows[0].license_key, '', 'revoked', req, { admin_id: req.user?.id });
+    return res.json({ success: true, revoked: true });
   } catch (error) {
     await client.query('ROLLBACK').catch(() => undefined);
     logger.error({ error }, 'Failed to revoke license');
@@ -190,6 +234,28 @@ router.post('/admin/licenses/:id/revoke', authenticateToken, requireGlobalAdmin,
   } finally {
     client.release();
   }
+});
+
+router.delete('/admin/licenses/:id', authenticateToken, requireGlobalAdmin, async (req: AuthRequest, res: Response) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const license = await client.query('SELECT id, license_key FROM licenses WHERE id = $1 FOR UPDATE', [req.params.id]);
+    if (!license.rowCount) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'License not found' }); }
+    const admins = await client.query(`SELECT id FROM users WHERE license_id = $1 AND role = 'admin'`, [req.params.id]);
+    for (const admin of admins.rows) {
+      await client.query(`DELETE FROM users WHERE id IN (SELECT id FROM panels WHERE owner_admin_id = $1)`, [admin.id]);
+    }
+    await client.query('DELETE FROM users WHERE license_id = $1', [req.params.id]);
+    await client.query('DELETE FROM licenses WHERE id = $1', [req.params.id]);
+    await client.query('COMMIT');
+    await writeLog(license.rows[0].license_key, '', 'deleted', req, { admin_id: req.user?.id });
+    return res.json({ success: true, deleted: true });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => undefined);
+    logger.error({ error }, 'Failed to delete license');
+    return res.status(500).json({ error: 'Failed to delete license' });
+  } finally { client.release(); }
 });
 
 export default router;
