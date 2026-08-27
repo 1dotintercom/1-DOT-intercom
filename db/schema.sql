@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Panel usernames are scoped to their administrator's matrix rather than
+-- globally. The API enforces uniqueness within that tenant.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
+
 -- 2. Panels table (panel accounts, locations & online status)
 CREATE TABLE IF NOT EXISTS panels (
     id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

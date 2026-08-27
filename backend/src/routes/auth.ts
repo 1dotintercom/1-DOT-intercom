@@ -22,11 +22,15 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
 
   try {
     const userRes = await query(
-      `SELECT u.* FROM users u
+      `SELECT u.*, p.panel_code, p.name AS panel_name, p.location, p.owner_admin_id,
+              owner.license_id AS owner_license_id, l.license_key AS owner_license_key
+       FROM users u
        LEFT JOIN panels p ON p.id = u.id
+       LEFT JOIN users owner ON owner.id = p.owner_admin_id
+       LEFT JOIN licenses l ON l.id = owner.license_id
        WHERE LOWER(u.email) = LOWER($1)
           OR LOWER(COALESCE(p.panel_code, '')) = LOWER($1)
-       LIMIT 1`,
+       ORDER BY CASE WHEN u.role = 'panel_user' THEN 0 ELSE 1 END`,
       [identifier],
     );
     if (userRes.rows.length === 0) {
@@ -34,10 +38,19 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const user = userRes.rows[0];
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+    const licenseKey = String(req.body.license_key ?? '').trim().toUpperCase();
+    const candidates = userRes.rows.filter((candidate: any) =>
+      !licenseKey || candidate.role !== 'panel_user' || candidate.owner_license_key === licenseKey,
+    );
+    let user: any = null;
+    for (const candidate of candidates) {
+      if (await bcrypt.compare(password, candidate.password_hash)) {
+        if (user) return res.status(409).json({ error: 'This username and password match more than one panel. Enter the administrator license key.' });
+        user = candidate;
+      }
+    }
 
-    if (!passwordMatch) {
+    if (!user) {
       logger.warn({ identifier }, 'Login failed: incorrect password');
       return res.status(401).json({ error: 'Invalid email or password' });
     }

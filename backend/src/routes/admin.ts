@@ -52,7 +52,13 @@ router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest,
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'A panel with that name or panel code already exists' });
     }
-    const duplicateLogin = await client.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [username]);
+    const duplicateLogin = await client.query(
+      `SELECT u.id FROM users u
+       WHERE LOWER(u.email) = LOWER($1)
+         AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM panels p WHERE p.id = u.id AND p.owner_admin_id = $2))
+       LIMIT 1`,
+      [username, req.user?.license_id ? req.user.id : null],
+    );
     if (duplicateLogin.rowCount) {
       // Usernames are tenant-scoped. Retire an old account only when its
       // administrator's license is no longer usable; never reattach it.
@@ -64,13 +70,20 @@ router.post('/panels', authenticateToken, requireAdmin, async (req: AuthRequest,
          JOIN licenses old_license ON old_license.id = old_admin.license_id
          WHERE old_user.id = old_panel.id AND old_user.role = 'panel_user'
            AND LOWER(old_user.email) = LOWER($1)
+           AND ($2::uuid IS NULL OR old_panel.owner_admin_id = $2)
            AND (old_license.status = 'revoked' OR (old_license.expires_at IS NOT NULL AND old_license.expires_at <= CURRENT_TIMESTAMP))`,
-        [username],
+        [username, req.user?.license_id ? req.user.id : null],
       );
-      const stillUsed = await client.query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1', [username]);
+      const stillUsed = await client.query(
+        `SELECT u.id FROM users u
+         WHERE LOWER(u.email) = LOWER($1)
+           AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM panels p WHERE p.id = u.id AND p.owner_admin_id = $2))
+         LIMIT 1`,
+        [username, req.user?.license_id ? req.user.id : null],
+      );
       if (stillUsed.rowCount) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'That panel username is already in use by an active administrator' });
+        return res.status(409).json({ error: 'That panel username is already in use in this administrator matrix' });
       }
     }
     const passwordHash = await bcrypt.hash(password, 12);
@@ -141,7 +154,13 @@ router.put('/panels/:panelId', authenticateToken, requireAdmin, async (req: Auth
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'A panel with that name or panel code already exists' });
     }
-    const duplicateLogin = await client.query('SELECT id FROM users WHERE id <> $1 AND LOWER(email) = LOWER($2) LIMIT 1', [panelId, username]);
+    const duplicateLogin = await client.query(
+      `SELECT u.id FROM users u
+       WHERE u.id <> $1 AND LOWER(u.email) = LOWER($2)
+         AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM panels p WHERE p.id = u.id AND p.owner_admin_id = $3))
+       LIMIT 1`,
+      [panelId, username, req.user?.license_id ? req.user.id : null],
+    );
     if (duplicateLogin.rowCount) {
       await client.query(
         `UPDATE users old_user
@@ -151,13 +170,20 @@ router.put('/panels/:panelId', authenticateToken, requireAdmin, async (req: Auth
          JOIN licenses old_license ON old_license.id = old_admin.license_id
          WHERE old_user.id = old_panel.id AND old_user.role = 'panel_user'
            AND LOWER(old_user.email) = LOWER($2)
+           AND ($3::uuid IS NULL OR old_panel.owner_admin_id = $3)
            AND (old_license.status = 'revoked' OR (old_license.expires_at IS NOT NULL AND old_license.expires_at <= CURRENT_TIMESTAMP))`,
-        [panelId, username],
+        [panelId, username, req.user?.license_id ? req.user.id : null],
       );
-      const stillUsed = await client.query('SELECT id FROM users WHERE id <> $1 AND LOWER(email) = LOWER($2) LIMIT 1', [panelId, username]);
+      const stillUsed = await client.query(
+        `SELECT u.id FROM users u
+         WHERE u.id <> $1 AND LOWER(u.email) = LOWER($2)
+           AND ($3::uuid IS NULL OR EXISTS (SELECT 1 FROM panels p WHERE p.id = u.id AND p.owner_admin_id = $3))
+         LIMIT 1`,
+        [panelId, username, req.user?.license_id ? req.user.id : null],
+      );
       if (stillUsed.rowCount) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'That panel username is already in use by an active administrator' });
+        return res.status(409).json({ error: 'That panel username is already in use in this administrator matrix' });
       }
     }
     await client.query(
